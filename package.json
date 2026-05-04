@@ -1,0 +1,21 @@
+{
+  "name": "pi-delete-session",
+  "version": "1.0.0",
+  "description": "Multi-select session manager for Pi with project grouping",
+  "main": "extensions/delete-session.ts",
+  "keywords": [
+    "pi-package"
+  ],
+  "author": "",
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./extensions/delete-session.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "typebox": "*"
+  }
+}
