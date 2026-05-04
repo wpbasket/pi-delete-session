@@ -1,11 +1,20 @@
 {
   "name": "pi-delete-session",
   "version": "1.0.0",
-  "description": "Multi-select session manager for Pi with project grouping",
+  "description": "Powerful session deletion tool for Pi. Delete multiple sessions at once, grouped by project, with safety confirmations.",
   "main": "extensions/delete-session.ts",
   "keywords": [
-    "pi-package"
+    "pi",
+    "pi-package",
+    "delete-session",
+    "cleanup",
+    "multi-select",
+    "session-deleter"
   ],
+  "homepage": "https://github.com/wpbasket/pi-delete-session#readme",
+  "bugs": {
+    "url": "https://github.com/wpbasket/pi-delete-session/issues"
+  },
   "author": "wpbasket",
   "license": "MIT",
   "repository": {

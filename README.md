@@ -1,12 +1,12 @@
 # pi-delete-session
 
-A professional multi-select session manager for the [Pi coding agent](https://github.com/badlogic/pi-mono). Clean up your session history with ease, grouping by project and deleting in batches.
+A powerful session deletion tool for the [Pi coding agent](https://github.com/badlogic/pi-mono). Bulk delete unwanted sessions, grouped by project, with a single command.
 
 ## Features
 
-- **📁 Project Grouping**: Browse sessions organized by their project folder.
-- **✅ Multi-Select**: Use checkboxes to select multiple sessions at once.
-- **🚀 Batch Actions**: Select All (**a**) or individual sessions (**Space**) to delete in one go.
+- **🗑️ Batch Deletion**: Delete multiple sessions in one go.
+- **📁 Project Grouping**: Find sessions organized by their project folder.
+- **✅ Checkbox Selection**: Multi-select sessions using an interactive list.
 - **⚠️ Safety First**: Red confirmation dialog showing all selected sessions before permanent deletion.
 - **🔄 Auto-Reset**: Automatically triggers a new session if you delete the one you're currently in.
 
