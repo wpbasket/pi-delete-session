@@ -1,6 +1,6 @@
 {
   "name": "pi-delete-session",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Powerful session deletion tool for Pi. Delete multiple sessions at once, grouped by project, with safety confirmations.",
   "main": "extensions/delete-session.ts",
   "keywords": [
