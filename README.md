@@ -21,7 +21,7 @@ pi install npm:pi-delete-session
 Or via GitHub:
 
 ```bash
-pi install git:github.com/YOUR_USERNAME/pi-delete-session
+pi install git:github.com/wpbasket/pi-delete-session
 ```
 
 ## Usage

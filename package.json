@@ -6,8 +6,12 @@
   "keywords": [
     "pi-package"
   ],
-  "author": "",
+  "author": "wpbasket",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wpbasket/pi-delete-session.git"
+  },
   "pi": {
     "extensions": [
       "./extensions/delete-session.ts"
