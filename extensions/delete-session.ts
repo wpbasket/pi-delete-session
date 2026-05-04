@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder, SessionManager, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { Container, Text, SelectList, type SelectItem } from "@mariozechner/pi-tui";
-import { unlink, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { readdir, readFile, unlink, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ interface SessionDisplay {
   messageCount: number;
   modified: Date;
   size?: number;
+  invalid?: boolean;
 }
 
 interface SelectableSession extends SessionDisplay {
@@ -28,34 +29,176 @@ function formatDate(d: Date): string {
   });
 }
 
-async function getFileSize(path: string): Promise<number | undefined> {
-  try { const s = await stat(path); return s.size; } catch { return undefined; }
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getSessionsDir(): string {
+  return join(getAgentDir(), "sessions");
+}
+
+function getDefaultSessionDir(cwd: string): string {
+  const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  return join(getSessionsDir(), safePath);
+}
+
+function decodeSessionFolderName(folder: string): string {
+  const inner = folder.startsWith("--") && folder.endsWith("--") ? folder.slice(2, -2) : folder;
+
+  // Windows cwd: C:\Users\me\app -> --C--Users-me-app--
+  if (/^[A-Za-z]--/.test(inner)) {
+    return `${inner[0]}:\\${inner.slice(3).replace(/-/g, "\\")}`;
+  }
+
+  // POSIX cwd: /home/me/app -> --home-me-app--
+  if (inner && !inner.includes("\\")) {
+    return `/${inner.replace(/-/g, "/")}`;
+  }
+
+  return inner;
+}
+
+function extractMessageText(message: any): string {
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => block?.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join(" ");
+}
+
+async function buildSessionDisplay(filePath: string): Promise<SessionDisplay | null> {
+  const invalid = async (reason = "invalid session"): Promise<SessionDisplay> => {
+    const stats = await stat(filePath);
+    const folder = basename(dirname(filePath));
+    return {
+      path: filePath,
+      name: `[invalid session] ${basename(filePath)} (${reason})`,
+      cwd: decodeSessionFolderName(folder),
+      messageCount: 0,
+      modified: stats.mtime,
+      size: stats.size,
+      invalid: true,
+    };
+  };
+
+  try {
+    const content = await readFile(filePath, "utf8");
+    const lines = content.split("\n").filter((line) => line.trim());
+    if (lines.length === 0) return invalid("empty file");
+
+    const entries: any[] = [];
+    let malformed = 0;
+    for (const line of lines) {
+      try { entries.push(JSON.parse(line)); } catch { malformed++; }
+    }
+    if (entries.length === 0) return invalid("malformed json");
+
+    const header = entries[0];
+    if (header?.type !== "session") return invalid("missing session header");
+
+    const stats = await stat(filePath);
+    let messageCount = 0;
+    let firstMessage = "";
+    let name: string | undefined;
+    let lastActivityTime = 0;
+
+    for (const entry of entries) {
+      if (entry?.type === "session_info") name = entry.name?.trim() || undefined;
+      if (entry?.type !== "message") continue;
+
+      messageCount++;
+      const message = entry.message;
+      if (message?.role !== "user" && message?.role !== "assistant") continue;
+
+      if (typeof message.timestamp === "number") lastActivityTime = Math.max(lastActivityTime, message.timestamp);
+      else if (typeof entry.timestamp === "string") {
+        const t = new Date(entry.timestamp).getTime();
+        if (!Number.isNaN(t)) lastActivityTime = Math.max(lastActivityTime, t);
+      }
+
+      const text = extractMessageText(message);
+      if (!firstMessage && message.role === "user" && text) firstMessage = text;
+    }
+
+    const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
+    const modified = lastActivityTime > 0
+      ? new Date(lastActivityTime)
+      : (!Number.isNaN(headerTime) ? new Date(headerTime) : stats.mtime);
+
+    return {
+      path: filePath,
+      name: name || firstMessage.slice(0, 60) || "(unnamed)",
+      cwd: typeof header.cwd === "string" ? header.cwd : "",
+      messageCount,
+      modified,
+      size: stats.size,
+      invalid: malformed > 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function listSessionFiles(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map((entry) => join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
 async function loadSessions(scope: "cwd" | "all", cwd: string): Promise<SessionDisplay[]> {
-  const raw = scope === "cwd" ? await SessionManager.list(cwd) : await SessionManager.listAll();
-  const enriched = await Promise.all(
-    raw.map(async (s) => ({
-      path: s.path,
-      name: s.name || s.firstMessage.slice(0, 60) || "(unnamed)",
-      cwd: s.cwd,
-      messageCount: s.messageCount,
-      modified: s.modified,
-      size: await getFileSize(s.path),
-    }))
-  );
-  return enriched.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+  // Fresh disk scan every command invocation. Avoid SessionManager list cache/stale state.
+  let files: string[] = [];
+
+  if (scope === "cwd") {
+    files = await listSessionFiles(getDefaultSessionDir(cwd));
+  } else {
+    try {
+      const projectDirs = (await readdir(getSessionsDir(), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(getSessionsDir(), entry.name));
+      const perDir = await Promise.all(projectDirs.map(listSessionFiles));
+      files = perDir.flat();
+    } catch {
+      files = [];
+    }
+  }
+
+  const sessions = (await Promise.all(files.map(buildSessionDisplay)))
+    .filter((s): s is SessionDisplay => Boolean(s));
+  return sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+}
+
+function installMissingSessionFilePatch() {
+  const proto = SessionManager.prototype as any;
+  if (proto.__deleteSessionMissingFilePatch) return;
+  proto.__deleteSessionMissingFilePatch = true;
+
+  const originalPersist = proto._persist;
+  proto._persist = function (entry: any) {
+    if (this.persist && this.sessionFile && this.flushed && !existsSync(this.sessionFile)) {
+      const dir = dirname(this.sessionFile);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      for (const e of this.fileEntries ?? []) appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
+      this.flushed = true;
+      return;
+    }
+    return originalPersist.call(this, entry);
+  };
 }
 
 // ── Extension ─────────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+  installMissingSessionFilePatch();
 
   // ── Multi-select session picker with checkboxes ────────────────────────────
   async function multiSelectSessions(
@@ -103,7 +246,9 @@ export default function (pi: ExtensionAPI) {
           const isCursor = itemIdx === cursor;
           const checkbox = s.selected ? theme.fg("success", "[✓]") : theme.fg("dim", "[ ]");
           const name = (s.name.length > 42 ? s.name.slice(0, 42) + "…" : s.name) || "(empty)";
-          const meta = `${s.messageCount} msgs • ${formatDate(s.modified)} • ${formatBytes(s.size ?? 0)}`;
+          const meta = s.invalid
+            ? `INVALID • ${formatDate(s.modified)} • ${formatBytes(s.size ?? 0)}`
+            : `${s.messageCount} msgs • ${formatDate(s.modified)} • ${formatBytes(s.size ?? 0)}`;
 
           const cursorIndicator = isCursor ? theme.fg("accent", "▸ ") : "  ";
           const nameStyled = isCursor ? theme.fg("accent", theme.bold(name)) : theme.fg("muted", name);
