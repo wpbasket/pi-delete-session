@@ -208,6 +208,8 @@ export default function (pi: ExtensionAPI) {
         selectedPrefix: (t: string) => theme.fg("accent", t),
         selectedText: (t: string) => theme.fg("accent", t),
         description: (t: string) => theme.fg("muted", t),
+        scrollInfo: (t: string) => theme.fg("dim", t),
+        noMatch: (t: string) => theme.fg("warning", t),
       });
       selectList.onSelect = (item) => done(item.value as string);
       selectList.onCancel = () => done(null);
