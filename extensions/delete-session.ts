@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Container, Text, SelectList, type SelectItem } from "@earendil-works/pi-tui";
+import { Container, Text, SelectList, type SelectItem, matchesKey, Key, type KeyId } from "@earendil-works/pi-tui";
 import { stat, unlink } from "node:fs/promises";
 import { basename } from "node:path";
 
@@ -33,6 +33,47 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function safeMatchesKey(data: string, key: KeyId): boolean {
+  try {
+    return matchesKey(data, key);
+  } catch {
+    return false;
+  }
+}
+
+function matchesAnyKey(data: string, key: KeyId, fallbacks: string[] = []): boolean {
+  return data === key || safeMatchesKey(data, key) || fallbacks.includes(data);
+}
+
+function isDownKey(data: string): boolean {
+  return matchesAnyKey(data, Key.down, ["down", "\x1b[B", "\x1bOB"]);
+}
+
+function isUpKey(data: string): boolean {
+  return matchesAnyKey(data, Key.up, ["up", "\x1b[A", "\x1bOA"]);
+}
+
+function isEnterKey(data: string): boolean {
+  return matchesAnyKey(data, Key.enter, ["enter", "return", "\r", "\n"]);
+}
+
+function isEscapeKey(data: string): boolean {
+  return matchesAnyKey(data, Key.escape, [Key.esc, "escape", "esc", "\x1b"]);
+}
+
+function isSpaceKey(data: string): boolean {
+  return matchesAnyKey(data, Key.space, ["space", " "]);
+}
+
+function normalizeSelectListInput(data: string): string {
+  if (isDownKey(data)) return "\x1b[B";
+  if (isUpKey(data)) return "\x1b[A";
+  if (isEnterKey(data)) return "\r";
+  if (isEscapeKey(data)) return "\x1b";
+  if (isSpaceKey(data)) return " ";
+  return data;
 }
 
 // ── Session listing ─────────────────────────────────────────────────────────
@@ -136,17 +177,17 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => { renderRows(w); return container.render(w); },
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "down" || data === "\x1b[B") { cursor = Math.min(cursor + 1, items.length - 1); clampScroll(); }
-          else if (data === "up" || data === "\x1b[A") { cursor = Math.max(cursor - 1, 0); clampScroll(); }
-          else if (data === " " || data === "space") { items[cursor].selected = !items[cursor].selected; }
+          if (isDownKey(data)) { cursor = Math.min(cursor + 1, items.length - 1); clampScroll(); }
+          else if (isUpKey(data)) { cursor = Math.max(cursor - 1, 0); clampScroll(); }
+          else if (isSpaceKey(data)) { items[cursor].selected = !items[cursor].selected; }
           else if (data === "a" || data === "A") {
             const allSelected = items.every(s => s.selected);
             for (const s of items) s.selected = !allSelected;
           }
-          else if (data === "return" || data === "\r" || data === "\n") {
+          else if (isEnterKey(data)) {
             const selected = items.filter((s) => s.selected).map((s) => s.path);
             done(selected);
-          } else if (data === "escape" || data === "\x1b") {
+          } else if (isEscapeKey(data)) {
             done([]);
           }
           tui.requestRender();
@@ -180,8 +221,8 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "return" || data === "\r" || data === "\n") { done(true); return; }
-          if (data === "escape" || data === "\x1b") { done(false); return; }
+          if (isEnterKey(data)) { done(true); return; }
+          if (isEscapeKey(data)) { done(false); return; }
           tui.requestRender();
         },
       };
@@ -228,8 +269,8 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "escape" || data === "\x1b") { done(null); return; }
-          selectList.handleInput(data);
+          if (isEscapeKey(data)) { done(null); return; }
+          selectList.handleInput(normalizeSelectListInput(data));
           tui.requestRender();
         },
       };
@@ -268,10 +309,10 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => { menuText.setText("\n" + renderMenu().join("\n\n") + "\n"); return container.render(w); },
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "down" || data === "\x1b[B") cursor = Math.min(cursor + 1, 1);
-          else if (data === "up" || data === "\x1b[A") cursor = Math.max(cursor - 1, 0);
-          else if (data === "return" || data === "\r" || data === "\n") { done(scopeItems[cursor].value as any); }
-          else if (data === "escape" || data === "\x1b") { done(null); }
+          if (isDownKey(data)) cursor = Math.min(cursor + 1, 1);
+          else if (isUpKey(data)) cursor = Math.max(cursor - 1, 0);
+          else if (isEnterKey(data)) { done(scopeItems[cursor].value as any); }
+          else if (isEscapeKey(data)) { done(null); }
           tui.requestRender();
         },
       };
