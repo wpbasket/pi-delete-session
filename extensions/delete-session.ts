@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Container, Text, SelectList, type SelectItem } from "@earendil-works/pi-tui";
+import { Container, Text, SelectList, matchesKey, Key, type SelectItem } from "@earendil-works/pi-tui";
 import { stat, unlink } from "node:fs/promises";
 import { basename } from "node:path";
 
@@ -136,17 +136,17 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => { renderRows(w); return container.render(w); },
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "down" || data === "\x1b[B") { cursor = Math.min(cursor + 1, items.length - 1); clampScroll(); }
-          else if (data === "up" || data === "\x1b[A") { cursor = Math.max(cursor - 1, 0); clampScroll(); }
-          else if (data === " " || data === "space") { items[cursor].selected = !items[cursor].selected; }
+          if (matchesKey(data, Key.down)) { cursor = Math.min(cursor + 1, items.length - 1); clampScroll(); }
+          else if (matchesKey(data, Key.up)) { cursor = Math.max(cursor - 1, 0); clampScroll(); }
+          else if (matchesKey(data, Key.space)) { items[cursor].selected = !items[cursor].selected; }
           else if (data === "a" || data === "A") {
             const allSelected = items.every(s => s.selected);
             for (const s of items) s.selected = !allSelected;
           }
-          else if (data === "return" || data === "\r" || data === "\n") {
+          else if (matchesKey(data, Key.enter)) {
             const selected = items.filter((s) => s.selected).map((s) => s.path);
             done(selected);
-          } else if (data === "escape" || data === "\x1b") {
+          } else if (matchesKey(data, Key.escape)) {
             done([]);
           }
           tui.requestRender();
@@ -180,8 +180,8 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "return" || data === "\r" || data === "\n") { done(true); return; }
-          if (data === "escape" || data === "\x1b") { done(false); return; }
+          if (matchesKey(data, Key.enter)) { done(true); return; }
+          if (matchesKey(data, Key.escape)) { done(false); return; }
           tui.requestRender();
         },
       };
@@ -228,7 +228,7 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "escape" || data === "\x1b") { done(null); return; }
+          if (matchesKey(data, Key.escape)) { done(null); return; }
           selectList.handleInput(data);
           tui.requestRender();
         },
@@ -268,10 +268,10 @@ export default function (pi: ExtensionAPI) {
         render: (w: number) => { menuText.setText("\n" + renderMenu().join("\n\n") + "\n"); return container.render(w); },
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          if (data === "down" || data === "\x1b[B") cursor = Math.min(cursor + 1, 1);
-          else if (data === "up" || data === "\x1b[A") cursor = Math.max(cursor - 1, 0);
-          else if (data === "return" || data === "\r" || data === "\n") { done(scopeItems[cursor].value as any); }
-          else if (data === "escape" || data === "\x1b") { done(null); }
+          if (matchesKey(data, Key.down)) cursor = Math.min(cursor + 1, 1);
+          else if (matchesKey(data, Key.up)) cursor = Math.max(cursor - 1, 0);
+          else if (matchesKey(data, Key.enter)) { done(scopeItems[cursor].value as any); }
+          else if (matchesKey(data, Key.escape)) { done(null); }
           tui.requestRender();
         },
       };
